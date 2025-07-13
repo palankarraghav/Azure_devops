@@ -1,0 +1,147 @@
+trigger: none
+
+parameters:
+  - name: environment
+    displayName: "Select Environment"
+    type: string
+    default: dev
+    values:
+      - dev
+      - nonProd
+      - prod
+
+variables:
+  - ${{ if eq(parameters.environment, 'dev') }}:
+      - name: poolName
+        value: DevPool
+      - name: azureServiceConnection
+        value: AzureServiceConnection-Dev
+
+  - ${{ if eq(parameters.environment, 'nonProd') }}:
+      - name: poolName
+        value: NonProdPool
+      - name: azureServiceConnection
+        value: AzureServiceConnection-NonProd
+
+  - ${{ if eq(parameters.environment, 'prod') }}:
+      - name: poolName
+        value: ProdPool
+      - name: azureServiceConnection
+        value: AzureServiceConnection-Prod
+
+stages:
+- stage: SecurityScan
+  displayName: "Security Scanning by SecOps"
+  jobs:
+    - job: SecOpsScan
+      displayName: "Run Security Scanners"
+      pool:
+        name: ${{ variables.poolName }}
+      steps:
+        - checkout: self
+
+        - script: |
+            echo "Installing Gitleaks..."
+            curl -sL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64 -o gitleaks
+            chmod +x gitleaks
+
+            echo "Running Gitleaks..."
+            ./gitleaks detect --source . --verbose || exit 1
+          displayName: "Gitleaks Scan"
+
+- stage: Plan
+  displayName: "Terraform Init & Plan"
+  dependsOn: SecurityScan
+  jobs:
+    - job: TerraformPlan
+      displayName: "Terraform Plan"
+      pool:
+        name: ${{ variables.poolName }}
+      steps:
+        - checkout: self
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: ${{ variables.azureServiceConnection }}
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              echo "Logged into Azure as:"
+              az account show --output table
+          displayName: "Login to Azure"
+
+        - task: TerraformInstaller@1
+          inputs:
+            terraformVersion: '1.5.7'
+
+        - script: |
+            echo "Initializing Terraform backend"
+            terraform init -backend-config="${{ parameters.environment }}.tfbackend"
+          displayName: "Terraform Init"
+
+        - script: |
+            echo "Checking Terraform formatting..."
+            terraform fmt -check -recursive
+          displayName: "Terraform Format Check"
+
+        - script: |
+            echo "Validating Terraform configuration..."
+            terraform validate
+          displayName: "Terraform Validate"
+
+        - script: |
+            terraform plan \
+              -var-file="${{ parameters.environment }}.tfvars" \
+              -out=tfplan.out
+          displayName: "Terraform Plan"
+
+        - task: PublishBuildArtifacts@1
+          inputs:
+            PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+            artifactName: 'tfplan'
+            publishLocation: 'Container'
+
+- stage: Approval
+  displayName: "[APPROVAL REQUIRED] - Confirm Apply"
+  dependsOn: Plan
+  jobs:
+    - deployment: WaitForApproval
+      displayName: "Manual Review Required"
+      environment: approval-env  
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - script: echo "Waiting for approval to proceed with Terraform Apply..."
+
+- stage: Apply
+  displayName: "Terraform Apply"
+  dependsOn: Approval
+  condition: succeeded()
+  jobs:
+    - job: TerraformApply
+      displayName: "Apply Terraform Plan"
+      pool:
+        name: ${{ variables.poolName }}
+      steps:
+        - checkout: self
+
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: ${{ variables.azureServiceConnection }}
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              echo "Logged into Azure as:"
+              az account show --output table
+          displayName: "Login to Azure"
+
+        - task: DownloadBuildArtifacts@1
+          inputs:
+            buildType: 'current'
+            downloadType: 'single'
+            artifactName: 'tfplan'
+            downloadPath: '$(System.ArtifactsDirectory)'
+
+        - script: |
+            terraform apply "$(System.ArtifactsDirectory)/tfplan/tfplan.out"
+          displayName: "Terraform Apply"

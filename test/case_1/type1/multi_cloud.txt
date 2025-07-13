@@ -1,0 +1,39 @@
+Considering Blog app is only for internal use
+
+1. Will be deploying Virtual network, and the services required for the application is deployed on it.
+
+2. Web app is deployed to host frontend application with auto scaling enabled based on cpu usage and memory.
+
+3. Api app is deployed to host backend application with auto scaling enabled based on cpu usage and memory.
+
+4. Azure ADLS is deployed to store images/videos..etc needed for backend,frontend application. Web app's system 
+    assigned identity is given access on ADLS so that it can retrive the needed.(Storage Data Blob Contributer access can be given)
+
+5. Key Vault is deployed to store all the secrets needed and through access policy, secret get access can be given to we apps. 
+    ex: database connection string, Logic app flow endpoint,,etc
+
+6. Web apps is linked to application insight to monitor exception failures, successful hits, errors. 
+   Log analytics workspace can be deployed along with this to collect logs of all the resources using diagnostic settings.
+
+7. Logic App will be used for approval/notifications, backend can trigger the flow using http trigger based on request.
+   SignalR can be used for chat/messaging purpose.
+
+8. As the application is internal no need of using application gateway or make entry in DNS zone and expose the endpoint.
+   linking private dns zone to vnet and making entry for all services private endpoints will serve the job.
+
+9. As user are getting reached till 2000, web app's horizontal scaling by increasing instances and scale up features will help enough to handle the traffic.
+
+10. TLS certificates will be added on web apps for secure connection.
+
+Infrastucture as code
+
+11. This infra can be deployed using terraform and maintained at Azure repos.
+
+CI/CD 
+
+12. CI - Created such a way using build pipeline that on every master PR automatic build is triggered 
+         which involves static code analysis, building code and droping build as artifact
+
+13. CD - Manual release pipeline will created, Based on the decided artifact to deploy pipeline is triggered which picks artifact and deploys to web apps
+
+14. Staging in web apps is used to make blue/green deployments during new release.

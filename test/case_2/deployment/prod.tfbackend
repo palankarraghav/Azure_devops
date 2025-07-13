@@ -1,0 +1,4 @@
+resource_group = "management-rsg"
+storage_account = "management-stg"
+container_name = "terraform-state"
+key = "prod.tfplan"

@@ -1,0 +1,35 @@
+Hi Team,
+
+1. AKS is deployed in one virtual network. And key vault is linked to aks for to manage secrets.
+
+2. Vnet is integrated with Application gateway which is intern linked with DNS zone.
+
+3. AKS have deployments for frontend application, backend application and chat handling service
+
+4. Stateful set applications are deployed for database, Queue handlind service and Redis cache
+
+5. Flow work in a way where blog is posted from frontend application which calls backend API, backend api creates the
+    request and pushes to queue handling service. Queue listner picks request from queue and sends approval mail.
+
+6. Approver receives approval mail, Once approver approves using the link. That link gets dns resolved gets 
+    application gateways public ip, reaches gateway, by backednd pool it reaches aks's nginx controller,
+    from there it reaches queue lister where queue listner updates database entry.
+
+7. Azure disks are created managed by aks once pvc is created and deployed into aks.
+
+8. TLS termination and web security is ensured at gateway.
+
+9. TLS is added on ingress controller also where cert-manager deploys certificate as secret which will get used 
+    by ingress.
+
+10. Chat services publishes updates to redis cache.
+
+11. Only Approval service is exposed via application gateway rest all is kept private.
+
+12. Azure monitoring, Promethus and grafana are enabled on aks for monitoring purposes.
+
+13. Access is controlled using both Azure RBAC and Role bindings.
+
+14. CI is created to build the image, scan it and then push to Azure container registry.
+
+15. CD is created in a way to deploy manifests to aks by picking latest ACR images pushed by CI.
